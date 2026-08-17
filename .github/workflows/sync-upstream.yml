@@ -1,0 +1,71 @@
+name: sync-upstream
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/mattpocock/skills.git
+          git fetch upstream flatten-skills-tree
+
+      - name: Check for upstream changes
+        id: check
+        run: |
+          count=$(git rev-list --count HEAD..upstream/flatten-skills-tree)
+          echo "count=$count"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: No changes
+        if: steps.check.outputs.count == '0'
+        run: echo "Upstream is in sync."
+
+      - name: Create sync branch and merge
+        if: steps.check.outputs.count != '0'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B auto-sync/upstream-flatten
+          if ! git merge --no-edit upstream/flatten-skills-tree; then
+            echo "merge_conflict=1" >> "$GITHUB_ENV"
+            git merge --abort
+          fi
+
+      - name: Push sync branch
+        if: env.merge_conflict != '1' && steps.check.outputs.count != '0'
+        run: git push --force-with-lease origin auto-sync/upstream-flatten
+
+      - name: Open PR
+        if: env.merge_conflict != '1' && steps.check.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create --base main --head auto-sync/upstream-flatten \
+            --title "chore: sync upstream flatten-skills-tree" \
+            --body "Automated sync from \`mattpocock/skills\` branch \`flatten-skills-tree\`." \
+            || echo "PR already exists or creation skipped"
+
+      - name: Open conflict issue
+        if: env.merge_conflict == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+            gh issue create \
+              --title "Upstream sync conflict: flatten-skills-tree" \
+              --body "Automatic merge from upstream/flatten-skills-tree failed. Resolve manually with: git fetch upstream && git merge upstream/flatten-skills-tree" \
+              || true
