@@ -1,0 +1,5 @@
+# Thin DSH bundle layer for Matt Pocock skills. Registers an isolated
+# filesystem skill provider that exposes only this package's skills/ tree.
+- insert:
+    - id: mattpocock-skills-dsh
+      name: mattpocock-skills-dsh/extensions/dsh/index.js
